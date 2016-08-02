@@ -1,11 +1,9 @@
-function BpPlotter(iface) {
-  this._iface = iface;
-
+function BpPlotter(num_methods) {
   var horiz_padding = 90;
   var vert_padding = 30;
   this._M = [vert_padding, 30, vert_padding, 80],
       //this._W = 1200 - this._M[1] - this._M[3],
-      this._H = 7*100 + 50 - this._M[0] - this._M[2];
+      this._H = num_methods*100 + 50 - this._M[0] - this._M[2];
 
   this._svg = d3.select('#container').html('')
       .append('svg:svg')
@@ -128,6 +126,7 @@ BpPlotter.prototype._stringify_associate = function(associate) {
 }
 
 BpPlotter.prototype.plot = function(bps) {
+  bps = bps['bp'];
   this._bp_to_associate_map = new Map()
   this._associate_to_bp_map = new Map()
 
@@ -184,18 +183,66 @@ BpPlotter.prototype.plot = function(bps) {
   });
 }
 
-function main() {
-  d3.json('data/bp.json', function(error, bps) {
-    new BpPlotter().plot(bps);
-  });
-  return;
+function Interface(sample_list) {
+  this._fill_sample_selectors(sample_list);
 
+  var self = this;
+  $('#sample-filter').keyup(function(evt) {
+    self._filter();
+  });
+
+  $('#sample-list-extended').stupidtable();
+
+  d3.selectAll('#sample-list-extended tbody tr').on('click', function(sampid) {
+    $('#sample-selector-extended').modal('hide');
+    d3.select('#sampid').text(sampid);
+
+    d3.json(sample_list[sampid].bp_path, function(error, bps) {
+      // Add two to account for SV and consensus tracks.
+      var num_methods = bps.methods.length + 2;
+      new BpPlotter(num_methods).plot(bps);
+    });
+  });
+}
+
+Interface.prototype._fill_sample_selectors = function(sample_list) {
+  var sampids = Object.keys(sample_list).sort();
+
+  var rows = d3.select('#sample-list-extended tbody').html('')
+    .selectAll('tr')
+    .data(sampids)
+    .enter().append('tr');
+
+  rows.append('td').attr('class', 'sampid').text(function(sampid) { return sampid; });
+  ['num_consensus_bps', 'num_wsbp', 'num_svs'].forEach(function(stat) {
+    rows.append('td').attr('class', stat).text(function(sampid) {
+      return sample_list[sampid][stat];
+    });
+  });
+  ['consensus_bps_with_sv', 'svs_with_consensus_bp'].forEach(function(stat) {
+    rows.append('td').attr('class', stat).text(function(sampid) {
+      return sample_list[sampid][stat].toFixed(3);
+    });
+  });
+}
+
+Interface.prototype._filter = function() {
+  var elems = $('#sample-selector-extended tbody').find('tr');
+  elems.hide();
+
+  var visible = elems.filter(function() {
+    var sampid = $(this).find('.sampid').text().toLowerCase();
+    var sample_filter = $('#sample-filter');
+    var filter_text = sample_filter.val().toLowerCase();
+    return sampid.indexOf(filter_text) !== -1;
+  }).show();
+}
+
+function main() {
   d3.json("data/index.json", function(error, sample_list) {
     if(error) return console.warn(error);
-    d3.json("data/metadata.json", function(error, metadata) {
-      new Interface(sample_list, metadata);
-      $('#sample-selector-extended').modal('show');
-    });
+    new Interface(sample_list);
+    $('#sample-selector-extended').modal('show');
   });
 }
 
