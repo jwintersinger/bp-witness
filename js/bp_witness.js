@@ -1,30 +1,91 @@
-function BpPlotter(num_methods) {
+Function BpPlotter(num_methods, bps) {
+  this._bps = bps;
+
   var horiz_padding = 90;
   var vert_padding = 30;
   this._M = [vert_padding, 30, vert_padding, 80],
       //this._W = 1200 - this._M[1] - this._M[3],
       this._H = num_methods*100 + 50 - this._M[0] - this._M[2];
 
+  this._compute_chrom_lens();
+
   this._svg = d3.select('#container').html('')
       .append('svg:svg')
       .attr('width', '100%')
       .attr('height', this._H + this._M[0] + this._M[2]);
   this._W = this._svg.node().getBoundingClientRect().width - this._M[1] - this._M[3];
-  this._container = this._svg.append('svg:g')  // This container is for padding
-                       .attr('transform', 'translate(' + this._M[3] + ',' + this._M[0] + ')')
-                       .append('svg:g'); // This container is for zooming
-
-  var self = this;
-  this._svg.call(d3.behavior.zoom().on('zoom', function() {
-    self._container.attr('transform', 'translate(' + d3.event.translate + ') scale(' + d3.event.scale + ')');
-  }).scaleExtent([1, 100]));
-
-  this._compute_chrom_lens();
 
   this._xscale = d3.scale.linear()
                          .domain([1, this._total_len])
                          .range([0, this._W]);
+  this._xscale.original_domain = this._xscale.domain();
+  this._configure_zooming();
+}
+
+BpPlotter.prototype.plot = function() {
+  // Remove all existing child elements.
+  this._svg.selectAll('*').remove();
+
+  this._container = this._svg.append('svg:g')  // This container is for padding
+                       .attr('transform', 'translate(' + this._M[3] + ',' + this._M[0] + ')')
+                       .append('svg:g'); // This container is for zooming
+
   this._draw_chrom_markers();
+  this._render();
+}
+
+BpPlotter.prototype._zoom_scale = function(scale, original_domain, zoom_from, scale_by) {
+  var l = scale.domain()[0];
+  var r = scale.domain()[1];
+
+  l = zoom_from - (zoom_from - l) / scale_by;
+  r = zoom_from + (r - zoom_from) / scale_by;
+
+  l = Math.round(l);
+  r = Math.round(r);
+  if(r - l < 10)
+    return;
+
+  var new_domain = [l, r];
+  if(this._is_domain_within_orig(original_domain, new_domain))
+    scale.domain(new_domain);
+  else
+    scale.domain(original_domain);
+}
+
+BpPlotter.prototype._is_domain_within_orig = function(original_domain, new_domain) {
+  return original_domain[0] <= new_domain[0] && original_domain[1] >= new_domain[1];
+}
+
+BpPlotter.prototype._configure_zooming = function() {
+  var self = this;
+
+  function handle_mouse_wheel() {
+    var evt = d3.event;
+    evt.preventDefault();
+
+    var scale_by = 1.4;
+    var direction = (evt.deltaY < 0 || evt.wheelDelta > 0) ? 1 : -1;
+    if(direction < 0)
+      scale_by = 1/scale_by;
+
+    var mouse_coords = d3.mouse(self._svg.node());
+    console.log(mouse_coords);
+    var target_scale = self._xscale;
+    // Take x-coordinate of mouse, figure out where that lies on subject
+    // axis, then place that point on centre of new zoomed axis.
+    var zoom_from = target_scale.invert(mouse_coords[0]);
+
+    self._zoom_scale(
+      target_scale,
+      target_scale.original_domain,
+      zoom_from,
+      scale_by
+    );
+    self.plot();
+  }
+  this._svg.on('mousewheel', handle_mouse_wheel); // Chrome
+  this._svg.on('wheel',      handle_mouse_wheel); // Firefox, IE
 }
 
 BpPlotter.prototype._compute_chrom_lens = function() {
@@ -125,8 +186,8 @@ BpPlotter.prototype._stringify_associate = function(associate) {
   return [associate.method, associate.postype, associate.chrom, associate.pos].join('_');
 }
 
-BpPlotter.prototype.plot = function(bps) {
-  bps = bps['bp'];
+BpPlotter.prototype._render = function() {
+  bps = this._bps['bp'];
   this._bp_to_associate_map = new Map()
   this._associate_to_bp_map = new Map()
 
@@ -157,6 +218,8 @@ BpPlotter.prototype.plot = function(bps) {
           postype: bp.postype,
         }), path.node());
 
+        path.datum(bp);
+
         path.attr('d', 'M0 10 V 90');
         if(bp.postype === 'start') {
           path.attr('d', 'M5 10 Q -5 55 5 90');
@@ -169,6 +232,13 @@ BpPlotter.prototype.plot = function(bps) {
         path.attr('transform', 'translate(' + xpos + ',' + ypos + ')');
 
         var toggle_active = function(P, is_active) {
+          if(is_active) {
+            var bp = d3.select(P).datum();
+            d3.select('#suppinfo').style('visibility', 'visible').text(chrom + '_' + d3.format(',')(bp.pos) + ' (' + bp.postype + ', ' + bp.method + ')');
+          } else {
+            d3.select('#suppinfo').style('visibility', 'hidden');
+          }
+
           var elem = self._bp_to_associate_map.get(P).map(function(ass) {
             return self._associate_to_bp_map.get(self._stringify_associate(ass));
           });
@@ -200,7 +270,7 @@ function Interface(sample_list) {
     d3.json(sample_list[sampid].bp_path, function(error, bps) {
       // Add two to account for SV and consensus tracks.
       var num_methods = bps.methods.length + 2;
-      new BpPlotter(num_methods).plot(bps);
+      new BpPlotter(num_methods, bps).plot();
     });
   });
 }

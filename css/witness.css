@@ -112,3 +112,7 @@ body {
 #sample-list-extended tbody tr {
   cursor: pointer;
 }
+
+#suppinfo {
+  visibility: hidden;
+}
