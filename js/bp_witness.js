@@ -1,4 +1,4 @@
-Function BpPlotter(num_methods, bps) {
+function BpPlotter(num_methods, bps) {
   this._bps = bps;
 
   var horiz_padding = 90;
@@ -182,14 +182,13 @@ BpPlotter.prototype._compute_cum_chr_locus = function(chrom, pos) {
   return this._cum_chr_lens[chrom] + pos;
 }
 
-BpPlotter.prototype._stringify_associate = function(associate) {
-  return [associate.method, associate.postype, associate.chrom, associate.pos].join('_');
+BpPlotter.prototype._keyify = function(chrom, pos) {
+  return [pos.method, pos.postype, chrom, pos.pos].join('_');
 }
 
 BpPlotter.prototype._render = function() {
-  bps = this._bps['bp'];
-  this._bp_to_associate_map = new Map()
-  this._associate_to_bp_map = new Map()
+  var bps = this._bps['bp'];
+  this._visual_map = new Map();
 
   var methods = Object.keys(bps).sort();
   // Place "sv" and "consensus" last.
@@ -210,14 +209,7 @@ BpPlotter.prototype._render = function() {
         var ypos = 100 * midx;
         var path = self._container.append('path');
 
-        self._bp_to_associate_map.set(path.node(), bp.associates);
-        self._associate_to_bp_map.set(self._stringify_associate({
-          method: method,
-          pos: bp.pos,
-          chrom: chrom,
-          postype: bp.postype,
-        }), path.node());
-
+        self._visual_map[self._keyify(chrom, bp)] = path.node();
         path.datum(bp);
 
         path.attr('d', 'M0 10 V 90');
@@ -232,16 +224,23 @@ BpPlotter.prototype._render = function() {
         path.attr('transform', 'translate(' + xpos + ',' + ypos + ')');
 
         var toggle_active = function(P, is_active) {
+          var pos = d3.select(P).datum();
+          var key = self._keyify(chrom, pos);
+
           if(is_active) {
-            var bp = d3.select(P).datum();
-            d3.select('#suppinfo').style('visibility', 'visible').text(chrom + '_' + d3.format(',')(bp.pos) + ' (' + bp.postype + ', ' + bp.method + ')');
+            d3.select('#suppinfo').style('visibility', 'visible').text(chrom + '_' + d3.format(',')(pos.pos) + ' (' + pos.postype + ', ' + pos.method + ')');
           } else {
             d3.select('#suppinfo').style('visibility', 'hidden');
           }
 
-          var elem = self._bp_to_associate_map.get(P).map(function(ass) {
-            return self._associate_to_bp_map.get(self._stringify_associate(ass));
-          });
+            console.log([Object.keys(self._bps.associates), Object.keys(pos), key]);
+          if(self._bps.associates.hasOwnProperty(key)) {
+            var elem = self._bps.associates[key].map(function(ass) {
+              return self._visual_map[ass];
+            });
+          } else {
+            var elem = [];
+          }
           elem.push(P);
           d3.selectAll(elem).classed('active', is_active);
         };
